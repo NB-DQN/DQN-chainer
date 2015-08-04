@@ -10,7 +10,7 @@ import pickle
 import numpy as np
 import scipy.misc as spm
 
-from chainer import cuda, FunctionSet, Variable, optimizers
+from chainer import FunctionSet, Variable, optimizers
 import chainer.functions as F
 
 from rlglue.agent.Agent import Agent
@@ -28,11 +28,9 @@ class DQN_class:
 
     def __init__(self, enable_controller=[0, 3, 4]):
         self.num_of_actions = len(enable_controller)
-        self.enable_controller = enable_controller  # Default setting : "Pong"
+        self.enable_controller = enable_controller
 
         print "Initializing DQN..."
-        print "CUDA init"
-        cuda.init()
 
         print "Model Building"
         self.model = FunctionSet(
@@ -43,7 +41,7 @@ class DQN_class:
             q_value=F.Linear(512, self.num_of_actions,
                              initialW=np.zeros((self.num_of_actions, 512),
                                                dtype=np.float32))
-        ).to_gpu()
+        )
 
         self.model_target = copy.deepcopy(self.model)
 
@@ -67,9 +65,9 @@ class DQN_class:
 
         # Generate Target Signals
         tmp = self.Q_func_target(s_dash)  # Q(s',*)
-        tmp = list(map(np.max, tmp.data.get()))  # max_a Q(s',a)
+        tmp = list(map(np.max, tmp.data))  # max_a Q(s',a)
         max_Q_dash = np.asanyarray(tmp, dtype=np.float32)
-        target = np.asanyarray(Q.data.get(), dtype=np.float32)
+        target = np.asanyarray(Q.data, dtype=np.float32)
 
         for i in xrange(num_of_batch):
             if not episode_end[i][0]:
@@ -81,11 +79,11 @@ class DQN_class:
             target[i, action_index] = tmp_
 
         # TD-error clipping
-        td = Variable(cuda.to_gpu(target)) - Q  # TD error
-        td_tmp = td.data + 1000.0 * (abs(td.data) <= 1)  # Avoid zero division
-        td_clip = td * (abs(td.data) <= 1) + td/abs(td_tmp) * (abs(td.data) > 1)
+        td = Variable(target) - Q  # TD error
+        td_tmp = td.data + np.float32(1000.0 * (abs(td.data) <= 1))  # Avoid zero division
+        td_clip = td * (abs(td.data) <= 1.0) + td/abs(td_tmp) * (abs(td.data) > 1.0)
 
-        zero_val = Variable(cuda.to_gpu(np.zeros((self.replay_size, self.num_of_actions))))
+        zero_val = Variable(np.zeros((self.replay_size, self.num_of_actions), dtype = np.float32))
         loss = F.mean_squared_error(td_clip, zero_val)
         return loss, Q
 
@@ -125,9 +123,6 @@ class DQN_class:
                 s_dash_replay[i] = np.array(self.D[3][replay_index[i]], dtype=np.float32)
                 episode_end_replay[i] = self.D[4][replay_index[i]]
 
-            s_replay = cuda.to_gpu(s_replay)
-            s_dash_replay = cuda.to_gpu(s_dash_replay)
-
             # Gradient-based update
             self.optimizer.zero_grads()
             loss, _ = self.forward(s_replay, a_replay, r_replay, s_dash_replay, episode_end_replay)
@@ -159,7 +154,7 @@ class DQN_class:
             index_action = np.random.randint(0, self.num_of_actions)
             print "RANDOM"
         else:
-            index_action = np.argmax(Q.get())
+            index_action = np.argmax(Q)
             print "GREEDY"
         return self.index_to_action(index_action), Q
 
@@ -185,7 +180,7 @@ class dqn_agent(Agent):  # RL-glue Process
         self.epsilon = 1.0  # Initial exploratoin rate
 
         # Pick a DQN from DQN_class
-        self.DQN = DQN_class()  # default is for "Pong".
+        self.DQN = DQN_class(enable_controller=[0, 1, 3, 4])
 
     def agent_start(self, observation):
 
@@ -196,7 +191,7 @@ class dqn_agent(Agent):  # RL-glue Process
         # Initialize State
         self.state = np.zeros((4, 84, 84), dtype=np.uint8)
         self.state[0] = obs_array
-        state_ = cuda.to_gpu(np.asanyarray(self.state.reshape(1, 4, 84, 84), dtype=np.float32))
+        state_ = np.asanyarray(self.state.reshape(1, 4, 84, 84), dtype=np.float32)
 
         # Generate an Action e-greedy
         returnAction = Action()
@@ -219,7 +214,7 @@ class dqn_agent(Agent):  # RL-glue Process
 
         # Compose State : 4-step sequential observation
         self.state = np.asanyarray([self.state[1], self.state[2], self.state[3], obs_processed], dtype=np.uint8)
-        state_ = cuda.to_gpu(np.asanyarray(self.state.reshape(1, 4, 84, 84), dtype=np.float32))
+        state_ = np.asanyarray(self.state.reshape(1, 4, 84, 84), dtype=np.float32)
 
         # Exploration decays along the time sequence
         if self.policyFrozen is False:  # Learning ON/OFF
@@ -251,7 +246,7 @@ class dqn_agent(Agent):  # RL-glue Process
             self.DQN.target_model_update()
 
         # Simple text based visualization
-        print ' Time Step %d /   ACTION  %d  /   REWARD %.1f   / EPSILON  %.6f  /   Q_max  %3f' % (self.time, self.DQN.action_to_index(action), np.sign(reward), eps, np.max(Q_now.get()))
+        print ' Time Step %d /   ACTION  %d  /   REWARD %.1f   / EPSILON  %.6f  /   Q_max  %3f' % (self.time, self.DQN.action_to_index(action), np.sign(reward), eps, np.max(Q_now))
 
         # Updates for next step
         self.last_observation = obs_array
