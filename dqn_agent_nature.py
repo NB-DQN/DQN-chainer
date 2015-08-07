@@ -28,7 +28,7 @@ class DQN_class:
 
     def __init__(self, enable_controller=[0, 3, 4]):
         self.num_of_actions = len(enable_controller)
-        self.enable_controller = enable_controller
+        self.enable_controller = enable_controller  # Default setting : "Pong"
 
         print "Initializing DQN..."
 
@@ -180,7 +180,7 @@ class dqn_agent(Agent):  # RL-glue Process
         self.epsilon = 1.0  # Initial exploratoin rate
 
         # Pick a DQN from DQN_class
-        self.DQN = DQN_class(enable_controller=[0, 1, 3, 4])
+        self.DQN = DQN_class()  # default is for "Pong".
 
     def agent_start(self, observation):
 
